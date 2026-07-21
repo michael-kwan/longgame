@@ -440,6 +440,41 @@ Collapsing champions into team aggregates actively destroys information (it
 throws away identity), which is why those two rows are far worse. Worth knowing
 before anyone tries "feature engineering" as the fix.
 
+### Champion pairs: five tests, all null
+
+`model/interactions.py` extends the lane-matchup test to the two broader classes
+— **synergy** (same team, any roles) and **adversarial** (opposite teams, any
+roles) — by two independent methods.
+
+Permutation test on residuals after removing additive effects (pairs with ≥30 games):
+
+| pair type | pairs | z |
+|---|---|---|
+| synergy (same team) | 2,312 | −2.20 |
+| adversarial (opposite teams) | 3,247 | −2.11 |
+| lane matchup (same role, opposite) | 134 | +0.12 |
+
+A factorization machine — the model class purpose-built for pairwise effects in
+sparse data — fit to ridge's residuals, sweeping rank and penalty:
+
+| model | CV R² | vs ridge |
+|---|---|---|
+| ridge alone | +0.0165 ± 0.0025 | — |
+| + FM rank 4, reg 0.1 | −0.0402 | −0.0567 · worse |
+| + FM rank 8, reg 0.1 | −0.0960 | −0.1125 · worse |
+| + FM rank 8, reg 1 | +0.0166 | +0.0001 · no difference |
+| **+ FM rank 8, reg 10** | **+0.0165** | **+0.0000 · no difference** |
+| + FM rank 16, reg 10 | +0.0165 | +0.0000 · no difference |
+
+**The best pairwise model is the one that regularises its pairwise terms to
+zero.** Under-penalised it overfits catastrophically; properly penalised it
+converges exactly onto ridge. That is what "no interaction signal" looks like
+from the inside.
+
+Five independent tests now agree — three permutation tests, residual boosting
+(`gbdt.py`), and the FM. **Champion effects on duration are additive.** No amount
+of model capacity buys anything here; only new *features* can.
+
 ### Lane matchups: not detectable
 
 Permutation test (`model/matchups.py`) — strip additive per-(role, champion)

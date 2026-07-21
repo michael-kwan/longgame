@@ -926,18 +926,10 @@ function build() {
   });
 
   const chips = document.getElementById("chips");
-  const r2 = stats.summary.r2, mae = stats.summary.mae;
-  [
-    `${stats.n_matches.toLocaleString()} matches`,
-    `${ENS.nets.length}-model ensemble`,
-    `R² ${r2 >= 0 ? "+" : ""}${r2.toFixed(3)}`,
-    `MAE ${mae.toFixed(2)} min`,
-  ].forEach((t) => {
-    const c = document.createElement("span");
-    c.className = "chip";
-    c.textContent = t;
-    chips.appendChild(c);
-  });
+  const c = document.createElement("span");
+  c.className = "chip";
+  c.textContent = `${stats.n_matches.toLocaleString()} matches`;
+  chips.appendChild(c);
 
   const rb = document.getElementById("rosterBox");
   if (roster && roster.players && roster.players.length) {
