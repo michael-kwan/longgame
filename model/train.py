@@ -119,11 +119,38 @@ def train_member(enc, train_idx, val_idx, vocab, args, seed, device, centers):
     torch.manual_seed(seed)
     rng = np.random.default_rng(seed)
     model = DraftNet(len(vocab), dim=args.dim, hidden=args.hidden, dropout=args.dropout).to(device)
-    opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.wd)
+
+    # The champion main-effect table is a ridge regression living inside the net,
+    # and ridge's optimal penalty here is nothing like the trunk's. Give it (and
+    # the embedding tables, which are equally data-starved per parameter) their
+    # own decay groups.
+    effect_params, embed_params, trunk_params = [], [], []
+    for name, p in model.named_parameters():
+        if name.startswith("champ_effect"):
+            effect_params.append(p)
+        elif name.startswith(("champ.", "role.", "tier.", "queue.")):
+            embed_params.append(p)
+        else:
+            trunk_params.append(p)
+    # The effect table is zero-initialised and sees a much smaller gradient than
+    # the trunk, so it needs its own (larger) learning rate or it stays inert.
+    opt = torch.optim.AdamW(
+        [
+            {"params": effect_params, "weight_decay": args.effect_wd,
+             "lr": args.lr * args.effect_lr_mult},
+            {"params": embed_params, "weight_decay": args.embed_wd, "lr": args.lr},
+            {"params": trunk_params, "weight_decay": args.wd, "lr": args.lr},
+        ],
+        lr=args.lr,
+    )
 
     steps_per_epoch = max(1, len(train_idx) // args.batch)
     total_steps = steps_per_epoch * args.epochs
-    sched = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=args.lr, total_steps=total_steps)
+    sched = torch.optim.lr_scheduler.OneCycleLR(
+        opt,
+        max_lr=[args.lr * args.effect_lr_mult, args.lr, args.lr],
+        total_steps=total_steps,
+    )
 
     # Bootstrap resample so ensemble members disagree where data is thin —
     # that disagreement is the pessimism signal used at inference (§6).
@@ -186,7 +213,10 @@ def main() -> None:
     ap.add_argument("--hidden", type=int, default=128)
     ap.add_argument("--lr", type=float, default=3e-3)
     ap.add_argument("--wd", type=float, default=5e-2)
-    ap.add_argument("--dropout", type=float, default=0.2)
+    ap.add_argument("--dropout", type=float, default=0.1)
+    ap.add_argument("--effect-wd", type=float, default=0.5)
+    ap.add_argument("--embed-wd", type=float, default=0.1)
+    ap.add_argument("--effect-lr-mult", type=float, default=20.0)
     ap.add_argument("--patience", type=int, default=6)
     ap.add_argument("--select", default="mae", choices=["mae", "nll"])
     ap.add_argument("--val-frac", type=float, default=0.12)

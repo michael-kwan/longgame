@@ -74,6 +74,13 @@ function createEnsemble(bundle) {
       for (let d = 0; d < DIM; d++) bans[d] += CE[c + d];
     }
 
+    /* Mean-pool, matching DraftNet._pool — sums would make the feature scale
+       grow as the draft fills. Empty groups stay at zero (divisor clamped to 1). */
+    const nA = Math.max(st.allyC.length, 1);
+    const nE = Math.max(st.enemyC.length, 1);
+    const nB = Math.max(st.bans.length, 1);
+    for (let d = 0; d < DIM; d++) { ally[d] /= nA; enemy[d] /= nE; bans[d] /= nB; }
+
     const tierE = net["tier.weight"].data, queueE = net["queue.weight"].data;
     const feats = new Float32Array(DIM * 4 + 3 + 16 + 8);
     let o = 0;

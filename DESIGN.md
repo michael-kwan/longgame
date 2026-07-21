@@ -367,6 +367,46 @@ The Riot API key in `tft-playerbase/.env` stays as a fallback if OP.GG's schema 
 
 ---
 
+## Results so far (12.5k matches)
+
+Built and running end to end. What the numbers actually say:
+
+| | R² (held out) | MAE |
+|---|---|---|
+| Predict the mean | 0 | 4.97 min |
+| Ridge, bag-of-champions, full draft only | **+0.0168** | 4.93 min |
+| DraftNet at 10 picks revealed | +0.0130 | 4.96 min |
+| DraftNet averaged over all draft phases | +0.0004 | 4.95 min |
+
+Signal by draft phase (picks revealed → R²):
+`0: −0.009 · 2: −0.009 · 4: +0.001 · 6: +0.010 · 8: +0.009 · 10: +0.013`
+
+Three honest readings:
+
+1. **The signal is real but late.** On an empty board the model is *worse* than
+   predicting the average; it only earns its keep once most of the draft is
+   visible. Prediction spread widens from 0.56 to 1.13 min over the same range,
+   so late-draft recommendations differ by about a minute — consistent with the
+   "+1 to +3 min" ceiling, at the low end.
+2. **Ridge still edges it out on full drafts.** The net does the broader job
+   (every partial state, full distribution, ensemble spread) but has not yet
+   beaten the linear baseline where they compete directly. Per §9 that is the bar,
+   so this is a known gap, not a rounding error. `model/train.py` prints the ridge
+   number every run so it can't be quietly forgotten.
+3. **It is data-limited, not architecture-limited.** Ridge R² rose from +0.011 at
+   10.7k matches to +0.017 at 11.7k — still climbing steeply. The crawl is the
+   lever; 100k+ is where the design's 0.02–0.06 estimate should be tested.
+
+Two findings worth keeping:
+
+- **The MLP alone lost to plain ridge.** It needed an explicit per-champion
+  additive channel (`champ_effect`) to recover main effects, plus its own learning
+  rate — at the shared rate the table stayed inert (weights sd 0.026, predictions
+  barely varying). With `--effect-lr-mult 20` the spread went to 1.13 min.
+- **Sum-pooling was actively harmful.** Feature scale grew as the draft filled,
+  so prediction spread *shrank* with more information — backwards. Mean-pooling
+  fixed the direction.
+
 ## Settled
 
 - Not RL — offline value learning + greedy improvement (§1).

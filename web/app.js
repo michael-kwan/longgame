@@ -292,12 +292,14 @@ function renderRecs(base, list) {
         <div class="fill" style="${fill}"></div></div></td>
       <td class="num ${pos ? "up" : "down"}">${fmtDelta(r.delta)}</td>
       <td class="num spread">±${r.std.toFixed(2)}</td>
+      <td class="num">${r.score.toFixed(2)}</td>
       <td class="num spread">${r.games}</td>
     </tr>`;
   }).join("");
   box.innerHTML = `<table>
     <thead><tr><th></th><th>Champion</th><th class="num">E[dur]</th><th></th>
-      <th class="num">Δ</th><th class="num">spread</th><th class="num">games</th></tr></thead>
+      <th class="num">Δ</th><th class="num">spread</th><th class="num">score</th>
+      <th class="num">games</th></tr></thead>
     <tbody>${rows}</tbody></table>
     <p class="note">Ranked by <b>E[duration] − ${S.lambda.toFixed(1)}×spread</b>. “Spread” is
     ensemble disagreement: high spread means the model is extrapolating, so pessimism pushes it down.
@@ -489,6 +491,24 @@ function build() {
       ).join("");
   }
 
+  const phaseNote = () => {
+    const ph = stats.phases || {};
+    const keys = Object.keys(ph).sort((a, b) => a - b);
+    if (!keys.length) return "";
+    const cells = keys.map((k) =>
+      `<td class="num">${ph[k].r2 >= 0 ? "+" : ""}${ph[k].r2.toFixed(4)}</td>`).join("");
+    const heads = keys.map((k) => `<th class="num">${k}</th>`).join("");
+    const late = ph[keys[keys.length - 1]].r2, early = ph[keys[0]].r2;
+    return `<br><br><b>Where the signal actually is.</b> Held-out R² by how many champions are
+      locked in:<table style="max-width:420px;margin-top:6px">
+      <thead><tr><th>picks revealed</th>${heads}</tr></thead>
+      <tbody><tr><td>R²</td>${cells}</tr></tbody></table>
+      <span class="note">On an empty board the model is ${early < 0 ? "<b>worse than</b>" : "no better than"}
+      simply predicting the average game — early recommendations are close to noise. It only earns
+      its keep late in the draft (R² ${late >= 0 ? "+" : ""}${late.toFixed(4)} at a full board), which is
+      also where the candidate spread widens to about a minute.</span>`;
+  };
+
   const base = stats.baseline;
   document.getElementById("about").innerHTML =
     `Trained on <b>${stats.n_matches.toLocaleString()}</b> ranked games crawled from OP.GG
@@ -499,7 +519,8 @@ function build() {
      <b>${r2 >= 0 ? "+" : ""}${r2.toFixed(3)}</b>.
      <br><br>Draft explains only a small slice of why games run long — most of it is how the game is
      actually played. Treat a Δ of a minute or two as the real ceiling here, and note that the
-     spread column is often larger than the gap between the top few candidates.`;
+     spread column is often larger than the gap between the top few candidates.
+     ${phaseNote()}`;
 
   refresh();
 }

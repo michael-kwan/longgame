@@ -89,6 +89,7 @@ def main() -> None:
             "n_matches": meta["n_matches"],
             "baseline": meta["baseline"],
             "summary": meta["summary"],
+            "phases": meta.get("phases", {}),
             "trained_at": meta["trained_at"],
         },
         "roster": roster,
