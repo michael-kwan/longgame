@@ -198,17 +198,33 @@ For each legal champion `c`: evaluate `V(board + c)`. Pick the argmax. That's ~1
 forward passes = one batch. Milliseconds.
 
 ### The trap: offline distribution shift
-`V` is trained on human drafts. `argmax` deliberately walks *off* that distribution,
-straight into states the model has never seen — and neural nets extrapolate
-confidently and wrongly. Un-defended, this policy will recommend Yuumi top into Darius
-and promise you a 45-minute game. This is the single most likely way the project
-produces impressive-looking garbage.
 
-Three defenses, all cheap, use all three:
-1. **Pessimism** — ensemble of 5 value heads; score = `mean − λ·std`.
+Un-defended, this policy will recommend Yuumi top into Darius and promise you a
+45-minute game. **Low sample size is the source of that error, but `argmax` is what
+makes it fatal** — two separate problems:
+
+1. **Sparse support → extrapolation.** The model has never seen Yuumi top. It doesn't
+   respond with "unsure"; it interpolates from champion embeddings and outputs a
+   confident number that is unconstrained by data.
+2. **`argmax` actively hunts for those errors.** Even if prediction error were small
+   and zero-mean everywhere, maximizing over ~170 candidates systematically selects the
+   ones the model *over*-predicts. The optimizer's curse: the winner of a max is
+   disproportionately likely to be an overestimate. So error doesn't average out — the
+   policy seeks it.
+
+That second point is why "just collect more data" doesn't fix it. You need to make the
+policy *prefer* candidates it has evidence for:
+
+1. **Pessimism** — ensemble of 5 value heads; score = `mean − λ·std`. Directly cancels
+   the optimizer's curse: candidates the ensemble disagrees on get penalized.
 2. **Support constraint** — hard-mask champions with thin data in that role/matchup.
 3. **Behavior regularization** — BCQ-style, only consider `c` where
    `p_next(c) ≥ τ · max_c' p_next(c')`. Keeps candidates on the manifold.
+
+Note that the roster feature (§7) does most of this work for free: restricting picks to
+champions your players actually play collapses the action space from ~170 to ~10 per
+slot, and every survivor is by construction well-supported. Keep the guards anyway —
+they're cheap and they cover the enemy-side rollouts too.
 
 ### If greedy isn't enough
 Sampled expectimax: for each candidate, roll the remaining draft — `p_next` for slots
@@ -217,7 +233,79 @@ terminal duration. Depth ≤ 9, fully batchable. Only bother if it beats greedy 
 
 ---
 
-## 7. Evaluation
+## 7. The roster — your five players
+
+You control all five picks and you know who's playing. That's a much stronger setting
+than soloq, and it changes the action space more than the model.
+
+### Input
+Five Riot IDs, assigned to roles. **Verified live** via `lol_get_summoner_profile`:
+
+```
+league_stats[].{game_type, tier_info.{tier,division,lp}}    ← elo band, per queue
+ranked_most_champions.my_champion_stats[].{champion_name, play, win, game_second}
+```
+
+Real response for a master-tier mid:
+`Orianna(455 games) Blitzcrank(58) Thresh(38) Xerath(25) Ziggs(22) Lee Sin(3) …`
+
+### Three things this buys
+
+**1. A per-slot action mask.** Champion pool with play counts, thresholded at ~N≥5
+games. Action space per slot drops from ~170 to ~10. This is both the feature you asked
+for *and* the strongest defense against §6's failure mode.
+
+**2. Elo conditioning.** Feed the roster's average tier into the context token so `V` is
+evaluated in the right band. Games are meaningfully longer and messier at low elo.
+
+**3. A per-player duration prior — free, and worth more than it looks.** `game_second /
+play` per champion gives each player's *actual average game length*. Some players simply
+play long games: they don't surrender, they scale, they farm. That's a player-level
+random effect that the draft-only model structurally cannot see. Add it as a context
+feature (roster mean + spread). My guess is this is a bigger single lever than any
+individual champion choice.
+
+### Two wrinkles
+
+- **`ranked_most_champions` has no role split.** The pool is season-long champion counts
+  with no position attached. Get roles from `lol_list_summoner_matches`
+  (`participants[].position`), but that caps at 20 matches — thin. Merge the two: use
+  the season pool for counts, the recent history for role assignment, and fall back to
+  a champion's modal role from `lol_list_lane_meta_champions` when a player's own
+  history is silent.
+- **Flex rank is often null.** The sampled player had `FLEXRANKED → TierInfo(null,null,null)`
+  despite being master in soloq. Fall back to soloq tier when flex is missing.
+
+### Queue scope
+Ranked 5s only: `game_type ∈ {SOLORANKED, FLEXRANKED}`, drop ARAM/normals/Arena.
+Flex alone is far too thin to train on, so **train on both with a queue token** and
+evaluate on flex. Drafts are drafts; the queue token absorbs the behavioral difference
+(premades coordinate, surrender less, and play longer).
+
+---
+
+## 8. Output: watching the distribution move
+
+You want `E[duration]` *and* the distribution, updating as the draft proceeds. The
+distributional head (§5) gives this directly — it's the same softmax, read at each state.
+
+Per turn, for the current board:
+
+- **Ranked candidate list** for the slot on the clock: champion, `E[duration]`,
+  `Δ` vs. the current board, and the pessimism-adjusted score actually used to rank.
+- **The distribution itself** — the ~20-bin softmax, drawn as a density.
+- **The trajectory** — one density per completed draft step, as a ridgeline: how the
+  distribution sharpens and shifts from ban phase to final pick. Overlay a running
+  `E[duration]` line.
+
+The ridgeline is the interesting artifact. Early bans barely move it; a scaling-carry
+pick should visibly shift mass past 35 minutes and thin out the 15-minute surrender
+spike. If it *doesn't* do that, the model is wrong and you'll see it immediately —
+which makes this a debugging tool, not just a display.
+
+---
+
+## 9. Evaluation
 
 Ordered by how much I'd trust them.
 
@@ -241,12 +329,12 @@ and more visibly a shift in `P(game > 35 min)` — call it 35% → 45%. That's a
 usable effect. It is not a 50-minute-games-on-demand button. Decide now that this is
 the bar, so the result can be judged honestly later.
 
-Also: in soloq you control **one** pick out of five. Same machinery — those turns are
-just expectations instead of maxima — but the achievable lift shrinks accordingly.
+Controlling all five picks (§7) sits at the good end of that range, since every turn is
+a maximization rather than an expectation over a teammate you can't influence.
 
 ---
 
-## 8. Build order
+## 10. Build order
 
 | # | Milestone | Output |
 |---|---|---|
@@ -255,16 +343,17 @@ just expectations instead of maxima — but the achievable lift shrinks accordin
 | 3 | Champ×role playrate table | the legal-action mask |
 | 4 | Baseline duration model (GBDT on comp features) | the number to beat |
 | 5 | Transformer trunk + `p_duration` + `p_win` | the value model |
-| 6 | Greedy policy + pessimism/support guards | **usable recommender** |
-| 7 | Matched-pair eval | do we believe it? |
-| 8 | `p_next` head + expectimax | only if 7 says the model is real |
-| 9 | CLI / live draft input | ergonomics |
+| 6 | Roster resolver — 5 Riot IDs → pools, roles, elo, duration priors | per-slot action masks |
+| 7 | Greedy policy + pessimism/support guards | **usable recommender** |
+| 8 | Turn-by-turn UI — ranked picks + ridgeline | the thing you actually look at |
+| 9 | Matched-pair eval | do we believe it? |
+| 10 | `p_next` head + expectimax | only if 9 says the model is real |
 
-Ship 1–7 before touching 8. Milestone 6 is already the product.
+Ship 1–9 before touching 10. Milestone 8 is already the product.
 
 ---
 
-## 9. Other OP.GG tools worth using
+## 11. Other OP.GG tools worth using
 
 Beyond ingest (§3), the same server covers inference-time needs:
 
@@ -278,11 +367,20 @@ The Riot API key in `tft-playerbase/.env` stays as a fallback if OP.GG's schema 
 
 ---
 
-## Open questions
+## Settled
 
-- **Soloq (1 pick) or full-team control (5 picks)?** Changes achievable lift a lot, not
-  the architecture.
-- **Objective: `E[duration]` or `P(duration > T)`?** The distributional head defers this,
-  but it should drive how the eval is framed.
-- **Rank band?** Low elo has longer, messier games and different FF behavior; high elo
-  drafts are cleaner. Affects both data volume and what "long" means.
+- Not RL — offline value learning + greedy improvement (§1).
+- Set completion, not sequence modeling (§4).
+- Enemy modeled as a win-rate-optimizing behavior policy, expectimax not minimax (§2).
+- Ranked 5s only; full control of all five picks (§7).
+- Report `E[duration]` and the full distribution per turn (§8).
+- Roster set by five Riot IDs → champion pools, roles, elo band (§7).
+
+## Still open
+
+- **Region(s) to crawl.** Affects volume and meta. NA only, or NA+KR+EUW?
+- **Elo band to train on.** The roster's band is what matters at inference, but training
+  wide with a tier token probably beats training narrow. Worth an ablation.
+- **Off-pool escape hatch?** Strict pool masking is safe but may block a genuinely great
+  pick a player could learn. Option: surface off-pool picks in a separate, clearly
+  flagged list rather than mixing them into the ranking.
