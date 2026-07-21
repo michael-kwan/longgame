@@ -151,19 +151,8 @@ td.num { text-align: right; }
 .down { color: var(--neg); }
 .spread { color: var(--muted); font-size: 11px; }
 
-/* -- multi-role recommendations -- */
-.rolegrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(176px, 1fr)); gap: 10px; }
-.roleblock { border: 1px solid var(--border); border-radius: 8px; padding: 9px 10px; }
-.roleblock h4 {
-  margin: 0 0 6px; font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase;
-  color: var(--text-secondary); font-weight: 600; display: flex; gap: 6px; align-items: baseline;
-}
-.roleblock h4 .turnno { color: var(--muted); font-weight: 400; }
-.roleblock table { font-size: 12.5px; }
-.roleblock td.num { white-space: nowrap; }
-.roleblock td:nth-child(2) { line-height: 1.25; }
-.roleblock td { padding: 3px 4px 3px 0; }
-.roleblock .dup { color: var(--muted); font-size: 10px; }
+/* suggested pick: greyed placeholder, never a value — Enter accepts it */
+.slot input::placeholder { color: var(--muted); font-style: italic; opacity: 1; }
 
 /* -- hero -- */
 .hero { display: flex; gap: 26px; flex-wrap: wrap; align-items: baseline; margin-bottom: 6px; }

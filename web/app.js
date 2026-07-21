@@ -68,7 +68,7 @@ const S = {
   lambda: 0.5,
   support: SUPPORT_FLOOR,
   poolOnly: false,
-  recommendAll: false,
+  showSuggestions: true,   // greyed top-1 per open role, on by default
   objective: "mean",
   log: [],   // ordered lock events, so the trajectory is real history
 };
@@ -365,64 +365,49 @@ function renderRecs(base, list, role) {
     “Games” is how often that champion was played in this role in the training data.</p>`;
 }
 
-/* Because the model's optimum is separable (model/bestdraft.py: hill climbing
-   never beats greedy), scoring each open role independently against the current
-   board IS the joint optimum — no combinatorial search needed. */
 function recsTitle(text) {
   const h = document.querySelector("#recs")?.closest(".card")?.querySelector("h2");
   if (h) h.textContent = text;
 }
 
-function renderAllRoles() {
-  const box = document.getElementById("recs");
-  recsTitle("Recommended picks — every open role");
-  const roles = openRoles();
-  if (!roles.length) {
-    box.innerHTML = `<p class="note">All five of your picks are locked.</p>`;
-    return;
+/* Suggestions are shown as greyed placeholder text, never as a value: they are
+   NOT part of the board state, so the prediction and the trajectory reflect only
+   champions actually locked in. Press Enter on an empty row to accept one.
+
+   Computed greedily down the rows so the same champion is not suggested twice.
+   Greedy is exact here rather than approximate — model/bestdraft.py showed the
+   model's optimum is separable, so per-role bests are also the best full draft. */
+function updateSuggestions() {
+  const claimed = new Set();
+  for (const slot of S.ally) {
+    const input = document.querySelector(
+      `.slot[data-side="ally"][data-role="${slot.role}"] input`);
+    if (!input) continue;
+    if (slot.champ) { input.placeholder = "—"; input.dataset.suggest = ""; continue; }
+    if (!S.showSuggestions) { input.placeholder = "—"; input.dataset.suggest = ""; continue; }
+    const { list } = recommend(slot.role);
+    const best = list.find((r) => !claimed.has(r.ci));
+    if (!best) { input.placeholder = "—"; input.dataset.suggest = ""; continue; }
+    claimed.add(best.ci);
+    input.placeholder = best.name;
+    input.dataset.suggest = best.name;
   }
-  const obj = OBJECTIVES[S.objective];
-  const perRole = roles.map((role) => ({ role, ...recommend(role) }));
+}
 
-  const topCount = new Map();
-  for (const { list } of perRole) {
-    for (const r of list.slice(0, 4)) topCount.set(r.name, (topCount.get(r.name) || 0) + 1);
-  }
-
-  const blocks = perRole.map(({ role, list }, i) => {
-    if (!list.length) {
-      return `<div class="roleblock"><h4>${ROLES[role]}</h4>
-        <p class="note">No legal candidates.</p></div>`;
-    }
-    const rows = list.slice(0, 4).map((r, j) => {
-      const pos = r.delta >= 0;
-      const dup = topCount.get(r.name) > 1 ? ` <span class="dup">also ${ROLES[
-        perRole.find((pr) => pr.role !== role &&
-          pr.list.slice(0, 4).some((x) => x.name === r.name))?.role] || ""}</span>` : "";
-      return `<tr><td class="rank">${j + 1}</td><td>${r.name}${dup}</td>
-        <td class="num">${obj.fmt(r.value)}</td>
-        <td class="num ${pos ? "up" : "down"}">${obj.fmtDelta(r.delta)}</td></tr>`;
-    }).join("");
-    return `<div class="roleblock">
-      <h4>${ROLES[role]} <span class="turnno">${i === 0 ? "next" : "open"}</span></h4>
-      <table><tbody>${rows}</tbody></table></div>`;
-  }).join("");
-
-  box.innerHTML = `<div class="rolegrid">${blocks}</div>
-    <p class="note">Best pick for each unfilled role, scored against the board as it
-    stands and re-scored whenever either team locks something in. Ranked by
-    <b>${obj.label} − ${S.lambda.toFixed(1)}×spread</b>. Because the model's optimum is
-    separable, filling every role with its own best pick is also the best full draft —
-    there is no combination to search for.</p>`;
+function acceptSuggestion(input) {
+  const name = input.dataset.suggest;
+  if (!name || input.value.trim()) return false;
+  input.value = name;
+  input.dispatchEvent(new Event("change"));
+  return true;
 }
 
 function refresh() {
   const base = predict(currentState());
-  if (S.recommendAll) renderAllRoles();
-  else {
-    const { list, role } = recommend();
-    renderRecs(base, list, role);
-  }
+  const { list, role } = recommend();
+  renderRecs(base, list, role);
+
+  updateSuggestions();
 
   const prev = S.log.length ? predict(stateAfter(S.log.length - 1)).probs : null;
   drawDistribution(base.probs, prev);
@@ -547,6 +532,9 @@ function champInput(onChange, placeholder) {
   };
   inp.addEventListener("change", commit);
   inp.addEventListener("blur", commit);
+  inp.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && acceptSuggestion(inp)) e.preventDefault();
+  });
   return inp;
 }
 
@@ -630,10 +618,11 @@ function build() {
   });
 
   const recBtn = document.getElementById("recmode");
+  recBtn.classList.add("primary");
   recBtn.addEventListener("click", () => {
-    S.recommendAll = !S.recommendAll;
-    recBtn.textContent = "Recommend: " + (S.recommendAll ? "all open roles" : "next pick");
-    recBtn.classList.toggle("primary", S.recommendAll);
+    S.showSuggestions = !S.showSuggestions;
+    recBtn.textContent = "Suggestions: " + (S.showSuggestions ? "on" : "off");
+    recBtn.classList.toggle("primary", S.showSuggestions);
     refresh();
   });
 
