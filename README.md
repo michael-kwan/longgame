@@ -49,6 +49,9 @@ Each step is resumable and independent; the crawler can keep running while you t
 | `model/roster.py` | Five Riot IDs → champion pools, roles, elo |
 | `model/export.py` | Bundles weights + UI into one HTML file |
 | `web/infer.js` | JS port of the forward pass (parity-tested against PyTorch) |
+| `model/gbdt.py` | XGBoost vs ridge — does nonlinearity help? (no) |
+| `model/matchups.py` | Do lane matchups carry signal? (no) |
+| `model/ceiling.py` | How much is predictable at draft time? (~2%) |
 | `tests/` | Parser, filtering, and JS↔PyTorch parity |
 
 ## Data

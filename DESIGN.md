@@ -417,6 +417,29 @@ the same distributional head at no cost. The page therefore exposes an
 **objective selector** — `E[duration]`, `P(> 35 min)`, `P(> 40 min)` — with
 pessimism computed in whichever units are selected.
 
+### Gradient boosting does not help
+
+`model/gbdt.py` — identical 10-fold CV, paired against the same folds:
+
+| model | CV R² | vs ridge |
+|---|---|---|
+| ridge, bag-of-champions | +0.0165 ± 0.0025 | — |
+| XGBoost, raw champion counts | +0.0156 ± 0.0026 | −0.0009 ± 0.0021 · **no difference** |
+| XGBoost, in-fold encoded team aggregates | +0.0028 ± 0.0034 | −0.0138 ± 0.0016 · worse |
+| ridge + XGBoost on residuals (aggregates) | +0.0037 ± 0.0036 | −0.0128 ± 0.0019 · worse |
+| ridge + XGBoost on residuals (raw) | +0.0154 ± 0.0034 | −0.0011 ± 0.0020 · **no difference** |
+
+The last row is the decisive one: strip the additive champion effects, hand a
+boosted tree ensemble the raw draft, and ask it to predict what ridge missed. It
+finds **nothing**. Together with the matchup permutation test above, two
+independent methods agree — **the signal in a draft is purely additive**. There
+are no composition or matchup interactions here for a nonlinear model to exploit,
+so no amount of model capacity buys anything.
+
+Collapsing champions into team aggregates actively destroys information (it
+throws away identity), which is why those two rows are far worse. Worth knowing
+before anyone tries "feature engineering" as the fix.
+
 ### Lane matchups: not detectable
 
 Permutation test (`model/matchups.py`) — strip additive per-(role, champion)

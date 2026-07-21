@@ -276,10 +276,6 @@ details table { margin-top: 8px; }
     </div>
   </div>
 
-  <div class="card">
-    <h2>What this is</h2>
-    <p class="note" id="about"></p>
-  </div>
 </div>
 
 <div class="tooltip" id="tip"></div>
@@ -953,37 +949,7 @@ function build() {
       ).join("");
   }
 
-  const phaseNote = () => {
-    const ph = stats.phases || {};
-    const keys = Object.keys(ph).sort((a, b) => a - b);
-    if (!keys.length) return "";
-    const cells = keys.map((k) =>
-      `<td class="num">${ph[k].r2 >= 0 ? "+" : ""}${ph[k].r2.toFixed(4)}</td>`).join("");
-    const heads = keys.map((k) => `<th class="num">${k}</th>`).join("");
-    const late = ph[keys[keys.length - 1]].r2, early = ph[keys[0]].r2;
-    return `<br><br><b>Where the signal actually is.</b> Held-out R² by how many champions are
-      locked in:<table style="max-width:420px;margin-top:6px">
-      <thead><tr><th>picks revealed</th>${heads}</tr></thead>
-      <tbody><tr><td>R²</td>${cells}</tr></tbody></table>
-      <span class="note">On an empty board the model is ${early < 0 ? "<b>worse than</b>" : "no better than"}
-      simply predicting the average game — early recommendations are close to noise. It only earns
-      its keep late in the draft (R² ${late >= 0 ? "+" : ""}${late.toFixed(4)} at a full board), which is
-      also where the candidate spread widens to about a minute.</span>`;
-  };
-
-  const base = stats.baseline;
-  document.getElementById("about").innerHTML =
-    `Trained on <b>${stats.n_matches.toLocaleString()}</b> ranked games crawled from OP.GG
-     (${stats.trained_at}). The model predicts a <i>distribution</i> over game length from the
-     partial draft, then each candidate is scored by expected duration minus ensemble
-     disagreement. Held-out MAE is <b>${mae.toFixed(2)} min</b> against a
-     <b>${base.mean_mae.toFixed(2)} min</b> predict-the-mean baseline; R² is
-     <b>${r2 >= 0 ? "+" : ""}${r2.toFixed(3)}</b>.
-     <br><br>Draft explains only a small slice of why games run long — most of it is how the game is
-     actually played. Treat a Δ of a minute or two as the real ceiling here, and note that the
-     spread column is often larger than the gap between the top few candidates.
-     ${phaseNote()}`;
-
+  // The methodology write-up lives in DESIGN.md / README.md, not on the page.
   refresh();
 }
 
