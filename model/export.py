@@ -55,7 +55,7 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--artifacts", type=Path, default=ROOT / "artifacts")
     ap.add_argument("--web", type=Path, default=ROOT / "web")
-    ap.add_argument("--out", type=Path, default=ROOT / "web" / "index.html")
+    ap.add_argument("--out", type=Path, default=ROOT / "docs" / "index.html")
     ap.add_argument("--roster", type=Path, default=None)
     args = ap.parse_args()
 
@@ -106,6 +106,7 @@ def main() -> None:
         .replace("/*APP*/", js)
     )
     (args.artifacts / "bundle.json").write_text(json.dumps(bundle, separators=(",", ":")))
+    args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(html)
     size_mb = len(html.encode()) / 1e6
     print(

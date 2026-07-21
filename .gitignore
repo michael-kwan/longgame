@@ -4,4 +4,3 @@ __pycache__/
 data/
 .DS_Store
 artifacts/
-web/index.html
