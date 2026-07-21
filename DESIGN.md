@@ -379,6 +379,48 @@ Per-fold R² ranges over [+0.008, +0.029], which is why single-split numbers swi
 wildly; two runs on near-identical data gave +0.009 and +0.017. Any single-split
 figure below carries ~±0.01 of noise.
 
+### Player features: games played is null, elo spread is not
+
+`ingest/profiles.py` fetches per-player ranked games, tier/division/LP and
+account level (10 extra calls per game). `model/experience.py` tests them.
+At 4,397 profiles, mean coverage 5.3 of 10 players per game.
+
+Which block actually carries signal, added to a champions-only model:
+
+| feature block | ≥3/10 covered (10,216 games) | ≥8/10 covered (2,795 games) |
+|---|---|---|
+| **games played** | +0.0003 ± 0.0006 · null | +0.0005 ± 0.0011 · null |
+| account level | −0.0002 ± 0.0003 · null | +0.0043 ± 0.0011 · better |
+| elo mean | +0.0058 ± 0.0011 · better | +0.0059 ± 0.0020 · better |
+| elo spread (sd, range) | +0.0045 ± 0.0012 · better | +0.0034 ± 0.0013 · better |
+
+**How many ranked games a player has played predicts nothing.** What looked like
+a win for "player features" was elo, not experience.
+
+And elo needs its own control, because every match record already carries a
+lobby-average tier for free. Against a champions **+ match-average-tier**
+baseline:
+
+| model | ≥3/10 covered | ≥8/10 covered |
+|---|---|---|
+| champions + match avg tier | +0.0168 | +0.0006 |
+| + per-player elo | +0.0019 ± 0.0011 · **no difference** | +0.0047 ± 0.0018 · better |
+| + all player features | +0.0018 ± 0.0012 · **no difference** | **+0.0119 ± 0.0030 · better** |
+
+At low coverage, per-player elo is just a noisy re-derivation of the tier we
+already had. Only once 8+ of the 10 players are known — enough to measure the
+*spread* rather than guess the mean — does it become genuinely new information.
+The stomp hypothesis holds, but it costs a full profile crawl to use.
+
+Practical catch for deployment: using this at inference needs every player's elo,
+including the enemy team's, looked up live during champion select. The static
+page cannot do that; it would have to come through the roster step.
+
+### Time features: null
+
+Hour of day, day of week, and a date trend add −0.0003 ± 0.0005. Nothing. (The
+crawl spans 29 days, so patch drift is not testable here either way.)
+
 ### The ceiling, measured
 
 `model/ceiling.py` — 10-fold CV, every feature available at draft time:
