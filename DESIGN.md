@@ -488,6 +488,57 @@ Collapsing champions into team aggregates actively destroys information (it
 throws away identity), which is why those two rows are far worse. Worth knowing
 before anyone tries "feature engineering" as the fix.
 
+### Full-draft combinations: nothing to find, and nothing to search
+
+Two separate questions — can the *data* support a composition effect, and does
+the *model* contain one?
+
+**The data cannot.** Every full draft in the set is unique:
+
+| | observed | distinct | most repeated |
+|---|---|---|---|
+| 5-champion team compositions | 24,932 | 24,917 | 4 times |
+| full 10-champion drafts | 12,466 | **12,466** | 1 time |
+
+There are ~1.2×10⁹ possible team compositions and ~1.3×10¹⁸ possible full drafts.
+With zero replication there is nothing to estimate non-parametrically — any claim
+about "the best composition" is extrapolation from lower-order structure, not a
+measurement.
+
+**The model contains none either.** `model/bestdraft.py` fills the five roles two
+ways: greedily (best pick per role, one at a time) and by hill climbing from 40
+random starts, swapping whichever single role improves the total most.
+
+```
+greedy       34.691 min   TOP=Aurora JUNGLE=Shaco MID=Kog'Maw ADC=Karthus SUPPORT=Sion
+hill climbing 34.691 min   identical
+restarts that beat greedy: 0/40      gain: +0.0000 min
+```
+
+The optimum is perfectly **separable** — the best full draft is exactly the best
+pick per role. Consistent with the pairwise nulls: there is no combination to
+search for, so search buys nothing over greedy.
+
+**Do not read the 10-minute span as achievable.** Best-found (34.7) minus
+greedy-worst (24.4) is 10.3 minutes, but random legal drafts have sd of only
+0.99 min, so the optimum sits ~5 sd out in a corner of a 10¹⁸-point space with no
+data anywhere near it. The measured ceiling (§ the ceiling) is ~0.95 min of
+genuinely predictable spread; that is the number to trust.
+
+The optimiser's curse is visible in the picks themselves. At λ=0 it selects
+Kog'Maw mid (80 games), Karthus ADC (220) and Sion support (30 games — exactly
+the support floor). Raising pessimism walks it back toward champions with real
+support:
+
+| λ | E[duration] | draft |
+|---|---|---|
+| 0.0 | 34.69 ± 0.59 | Aurora / Shaco / Kog'Maw / Karthus / Sion(30g) |
+| 1.0 | 34.11 ± 0.51 | Sion(548g) / Shaco / Azir / Vel'Koz / Zyra |
+| 2.0 | 33.80 ± 0.33 | Azir / Shaco / Sion / Vel'Koz / Tahm Kench |
+
+Giving up 0.9 minutes of *claimed* duration buys a draft whose champions have
+5–18× the data behind them. That trade is the whole argument for pessimism.
+
 ### Champion pairs: five tests, all null
 
 `model/interactions.py` extends the lane-matchup test to the two broader classes
