@@ -379,42 +379,36 @@ Per-fold R² ranges over [+0.008, +0.029], which is why single-split numbers swi
 wildly; two runs on near-identical data gave +0.009 and +0.017. Any single-split
 figure below carries ~±0.01 of noise.
 
-### Player features: games played is null, elo spread is not
+### Player features: games played is null, elo is marginal and shrinking
 
 `ingest/profiles.py` fetches per-player ranked games, tier/division/LP and
 account level (10 extra calls per game). `model/experience.py` tests them.
-At 4,397 profiles, mean coverage 5.3 of 10 players per game.
 
-Which block actually carries signal, added to a champions-only model:
+Every match record already carries a lobby-average tier for free, so the only
+honest baseline is **champions + match-average tier**. Measured against it, at
+7,197 profiles (mean coverage 6.6 of 10 players):
 
-| feature block | ≥3/10 covered (10,216 games) | ≥8/10 covered (2,795 games) |
+| added feature block | ≥8/10 covered (5,356 games) | ≥10/10 covered (1,368 games) |
 |---|---|---|
-| **games played** | +0.0003 ± 0.0006 · null | +0.0005 ± 0.0011 · null |
-| account level | −0.0002 ± 0.0003 · null | +0.0043 ± 0.0011 · better |
-| elo mean | +0.0058 ± 0.0011 · better | +0.0059 ± 0.0020 · better |
-| elo spread (sd, range) | +0.0045 ± 0.0012 · better | +0.0034 ± 0.0013 · better |
+| games played | −0.0014 ± 0.0006 · worse | −0.0014 ± 0.0016 · null |
+| account level | +0.0023 ± 0.0014 · null | +0.0036 ± 0.0031 · null |
+| elo mean | +0.0027 ± 0.0012 · better | +0.0002 ± 0.0004 · null |
+| elo spread (sd, range) | +0.0013 ± 0.0016 · null | +0.0011 ± 0.0013 · null |
+| all player features | +0.0048 ± 0.0021 · better | +0.0058 ± 0.0056 · null |
 
-**How many ranked games a player has played predicts nothing.** What looked like
-a win for "player features" was elo, not experience.
+**How many ranked games a player has played predicts nothing.** That result has
+been stable across every sample size tested.
 
-And elo needs its own control, because every match record already carries a
-lobby-average tier for free. Against a champions **+ match-average-tier**
-baseline:
+The elo result is a cautionary tale about small subsets. At 4,397 profiles the
+≥8/10 subset held 2,795 games and "all player features" measured **+0.0119 ±
+0.0030** — four standard errors, apparently solid. Doubling the subset to 5,356
+games cut it to **+0.0048 ± 0.0021**, and elo spread — the supposed stomp
+mechanism — stopped being significant at all. On the cleanest design available
+(all ten players known) nothing survives.
 
-| model | ≥3/10 covered | ≥8/10 covered |
-|---|---|---|
-| champions + match avg tier | +0.0168 | +0.0006 |
-| + per-player elo | +0.0019 ± 0.0011 · **no difference** | +0.0047 ± 0.0018 · better |
-| + all player features | +0.0018 ± 0.0012 · **no difference** | **+0.0119 ± 0.0030 · better** |
-
-At low coverage, per-player elo is just a noisy re-derivation of the tier we
-already had. Only once 8+ of the 10 players are known — enough to measure the
-*spread* rather than guess the mean — does it become genuinely new information.
-The stomp hypothesis holds, but it costs a full profile crawl to use.
-
-Practical catch for deployment: using this at inference needs every player's elo,
-including the enemy team's, looked up live during champion select. The static
-page cannot do that; it would have to come through the roster step.
+An effect that halves each time the sample grows is usually on its way to zero.
+Treat per-player elo as **unproven**, not as a feature worth the 10× crawl cost
+and the live enemy-lookup problem it would create at inference.
 
 ### Time features: null
 
