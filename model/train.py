@@ -52,35 +52,53 @@ def baselines(enc: dict[str, np.ndarray], train_idx, val_idx) -> dict:
         "mean_minutes": float(mean_pred),
         "std_minutes": float(val_min.std()),
         "ridge_r2": ridge["r2"],
+        "ridge_se": ridge["se"],
         "ridge_mae": ridge["mae"],
         "ridge_lambda": ridge["lam"],
     }
 
 
-def _ridge_full_draft(enc, train_idx, val_idx) -> dict:
+def _ridge_full_draft(enc, train_idx, val_idx, folds: int = 10) -> dict:
+    """Cross-validated, because a single split cannot measure an effect this small.
+
+    At ~12k matches the per-fold R2 ranges over roughly [+0.008, +0.029]; two runs
+    on near-identical data produced +0.009 and +0.017 from single splits alone.
+    Reporting a point estimate without the standard error invites reading noise
+    as progress.
+    """
+    n = len(enc["duration"])
     n_champ = int(enc["picks"].max()) + 1
-    counts = np.zeros((len(enc["duration"]), n_champ), dtype=np.float32)
-    rows = np.repeat(np.arange(len(counts)), 10)
-    counts[rows, enc["picks"].reshape(len(counts), 10).ravel()] += 1
+    counts = np.zeros((n, n_champ), dtype=np.float64)
+    rows = np.repeat(np.arange(n), 10)
+    counts[rows, enc["picks"].reshape(n, 10).ravel()] += 1
     counts[:, 0] = 0  # padding column
 
-    y = enc["duration"]
-    Xtr, ytr = counts[train_idx], y[train_idx]
-    Xte, yte = counts[val_idx], y[val_idx]
-    mu = float(ytr.mean())
-    A = Xtr.T @ Xtr
-    b = Xtr.T @ (ytr - mu)
-    eye = np.eye(n_champ, dtype=np.float32)
+    y = enc["duration"].astype(np.float64)
+    rng = np.random.default_rng(0)
+    perm = rng.permutation(n)
+    eye = np.eye(n_champ)
 
-    best = {"r2": -np.inf, "mae": np.inf, "lam": None}
-    for lam in (30, 100, 300, 1000, 3000):
-        w = np.linalg.solve(A + lam * eye, b)
-        pred = Xte @ w + mu
-        ss_res = float(((pred - yte) ** 2).sum())
-        ss_tot = float(((yte - yte.mean()) ** 2).sum())
-        r2 = 1.0 - ss_res / ss_tot
-        if r2 > best["r2"]:
-            best = {"r2": r2, "mae": float(np.abs(pred - yte).mean()), "lam": lam}
+    best = {"r2": -np.inf, "se": None, "mae": np.inf, "lam": None}
+    for lam in (100, 300, 1000, 3000):
+        r2s, maes = [], []
+        for fold in np.array_split(perm, folds):
+            tr = np.setdiff1d(perm, fold, assume_unique=False)
+            mu = y[tr].mean()
+            w = np.linalg.solve(counts[tr].T @ counts[tr] + lam * eye,
+                                counts[tr].T @ (y[tr] - mu))
+            pred = counts[fold] @ w + mu
+            ss_res = ((pred - y[fold]) ** 2).sum()
+            ss_tot = ((y[fold] - y[fold].mean()) ** 2).sum()
+            r2s.append(1.0 - ss_res / ss_tot)
+            maes.append(np.abs(pred - y[fold]).mean())
+        r2s = np.array(r2s)
+        if r2s.mean() > best["r2"]:
+            best = {
+                "r2": float(r2s.mean()),
+                "se": float(r2s.std(ddof=1) / np.sqrt(folds)),
+                "mae": float(np.mean(maes)),
+                "lam": lam,
+            }
     return best
 
 
@@ -220,13 +238,23 @@ def main() -> None:
     ap.add_argument("--patience", type=int, default=6)
     ap.add_argument("--select", default="mae", choices=["mae", "nll"])
     ap.add_argument("--val-frac", type=float, default=0.12)
+    ap.add_argument("--queues", default="all",
+                    help="all | SOLORANKED | FLEXRANKED | comma-separated")
     args = ap.parse_args()
 
     device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
     print(f"[train] device={device}")
 
     rows = D.load_matches(args.data_dir)
+    if args.queues != "all":
+        wanted = set(args.queues.split(","))
+        before = len(rows)
+        rows = [r for r in rows if r["queue"] in wanted]
+        print(f"[train] queue filter {sorted(wanted)}: {before} -> {len(rows)} matches")
     print(f"[train] {len(rows)} unique matches")
+    if len(rows) < 3000:
+        print(f"[train] WARNING: {len(rows)} matches is far too few for {len(set()) or 173} "
+              f"champions — expect the model to learn essentially nothing.")
     vocab = D.build_vocab(rows)
     enc = D.encode(rows, vocab)
     print(f"[train] {len(vocab) - 1} champions seen")
@@ -245,8 +273,8 @@ def main() -> None:
     )
     print(
         f"[train] ridge (full draft, bag-of-champions, lambda={base['ridge_lambda']}): "
-        f"R^2 {base['ridge_r2']:+.4f}  MAE {base['ridge_mae']:.3f} min "
-        f"<- the net must beat this at 10 picks"
+        f"R^2 {base['ridge_r2']:+.4f} +- {base['ridge_se']:.4f} (10-fold CV)  "
+        f"MAE {base['ridge_mae']:.3f} min  <- the net must beat this at 10 picks"
     )
 
     centers = torch.from_numpy(D.BIN_CENTERS).to(device)
@@ -268,7 +296,9 @@ def main() -> None:
           f"({100 * (base['prior_nll'] - mean_nll) / base['prior_nll']:+.1f}%)")
     print(f"  mean MAE    {base['mean_mae']:.2f}  ->  model {mean_mae:.2f} min")
     print(f"  R^2         {mean_r2:+.4f}   (DESIGN.md expects 0.02-0.06)")
-    print(f"  ridge R^2   {base['ridge_r2']:+.4f}  (full draft only)")
+    print(f"  ridge R^2   {base['ridge_r2']:+.4f} +- {base['ridge_se']:.4f}  (full draft, 10-fold CV)")
+    print(f"  NOTE: the net's numbers above come from a single {args.val_frac:.0%} split, so they "
+          f"carry roughly +-0.01 of noise.\n        Differences smaller than that are not real.")
     print(f"  win acc     {np.mean([r['win_acc'] for r in reports]):.3f}")
 
     print("\n[train] signal by draft phase (ensemble member 0):")

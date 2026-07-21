@@ -32,7 +32,7 @@ const S = {
   ally: ROLES.map((_, i) => ({ role: i, champ: null })),
   enemy: ROLES.map((_, i) => ({ role: i, champ: null })),
   tier: Math.max(0, TIERS.indexOf("EMERALD")),
-  queue: 0,
+  queue: Math.max(0, QUEUES.indexOf("FLEXRANKED")),
   onclock: 0,
   lambda: 0.5,
   support: 30,
@@ -418,6 +418,7 @@ function build() {
   QUEUES.forEach((q, i) => {
     const o = document.createElement("option");
     o.value = i; o.textContent = q === "SOLORANKED" ? "Ranked solo/duo" : "Ranked flex";
+    if (i === S.queue) o.selected = true;
     qSel.appendChild(o);
   });
   qSel.addEventListener("change", () => { S.queue = +qSel.value; refresh(); });

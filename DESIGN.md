@@ -369,6 +369,39 @@ The Riot API key in `tft-playerbase/.env` stays as a fallback if OP.GG's schema 
 
 ## Results so far (12.5k matches)
 
+**Headline: champion identity explains under 2% of duration variance, and lane
+matchups add nothing measurable on top of it. This is a champion-scaling model,
+because that is all the data supports.**
+
+Cross-validated ridge on champion identity alone (10-fold, full drafts):
+**R² = +0.0165 ± 0.0025** — 6.6 SE from zero, so the effect is real, and small.
+Per-fold R² ranges over [+0.008, +0.029], which is why single-split numbers swing
+wildly; two runs on near-identical data gave +0.009 and +0.017. Any single-split
+figure below carries ~±0.01 of noise.
+
+### Lane matchups: not detectable
+
+Permutation test (`model/matchups.py`) — strip additive per-(role, champion)
+effects, group residuals by lane pair, compare against shuffled residuals:
+
+| min games per matchup | matchups | z |
+|---|---|---|
+| 20 | 651 | −2.76 |
+| 40 | 134 | **+0.12** |
+
+z ≈ 0 at the usable threshold: **no evidence lane matchups carry signal beyond
+additive champion effects.** The tempting "longest matchups" table (Pyke vs Soraka
++3.6 min at n=30, Alistar vs Leona −3.4 min at n=29) is noise — with ~414
+qualifying pairs and a per-pair standard error near 1.2 min, outliers of ±3 min
+are exactly what chance produces.
+
+Getting matchups to register needs vastly more data: ~15k plausible lane pairs
+× hundreds of games each is a millions-of-games problem, not a 12k one. The model
+also cannot currently *represent* a matchup — enemy roles are passed as unknown
+(§7), so the enemy team is a bag of champions with no lane structure. Both the
+structural fix and the data are prerequisites; neither alone is enough.
+
+
 Built and running end to end. What the numbers actually say:
 
 | | R² (held out) | MAE |
