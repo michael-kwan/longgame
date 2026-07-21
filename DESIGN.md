@@ -388,27 +388,39 @@ Every match record already carries a lobby-average tier for free, so the only
 honest baseline is **champions + match-average tier**. Measured against it, at
 7,197 profiles (mean coverage 6.6 of 10 players):
 
-| added feature block | ≥8/10 covered (5,356 games) | ≥10/10 covered (1,368 games) |
+| added feature block | ≥8/10 covered (8,523 games) | ≥10/10 covered (3,701 games) |
 |---|---|---|
-| games played | −0.0014 ± 0.0006 · worse | −0.0014 ± 0.0016 · null |
-| account level | +0.0023 ± 0.0014 · null | +0.0036 ± 0.0031 · null |
-| elo mean | +0.0027 ± 0.0012 · better | +0.0002 ± 0.0004 · null |
-| elo spread (sd, range) | +0.0013 ± 0.0016 · null | +0.0011 ± 0.0013 · null |
-| all player features | +0.0048 ± 0.0021 · better | +0.0058 ± 0.0056 · null |
+| games played | −0.0010 ± 0.0003 · worse | −0.0017 ± 0.0003 · worse |
+| account level | +0.0015 ± 0.0009 · null | +0.0041 ± 0.0020 · better |
+| elo mean | +0.0026 ± 0.0009 · better | +0.0024 ± 0.0011 · better |
+| elo spread (sd, range) | +0.0013 ± 0.0011 · null | +0.0031 ± 0.0019 · null |
+| all player features | +0.0040 ± 0.0012 · better | +0.0081 ± 0.0025 · better |
+
+Final numbers, 12,197 profiles, mean coverage 8.0 of 10.
 
 **How many ranked games a player has played predicts nothing.** That result has
 been stable across every sample size tested.
 
-The elo result is a cautionary tale about small subsets. At 4,397 profiles the
-≥8/10 subset held 2,795 games and "all player features" measured **+0.0119 ±
-0.0030** — four standard errors, apparently solid. Doubling the subset to 5,356
-games cut it to **+0.0048 ± 0.0021**, and elo spread — the supposed stomp
-mechanism — stopped being significant at all. On the cleanest design available
-(all ten players known) nothing survives.
+The elo result is a cautionary tale about reading small subsets. Tracked across
+three crawl sizes, "all player features" on the ≥8/10 subset went:
 
-An effect that halves each time the sample grows is usually on its way to zero.
-Treat per-player elo as **unproven**, not as a feature worth the 10× crawl cost
-and the live enemy-lookup problem it would create at inference.
+| profiles | subset | delta vs champions + tier |
+|---|---|---|
+| 4,397 | 2,795 games | +0.0119 ± 0.0030 |
+| 7,197 | 5,356 games | +0.0048 ± 0.0021 |
+| **12,197** | **8,523 games** | **+0.0040 ± 0.0012** |
+
+The first reading was ~3× the final one. It settles around **+0.004 at ≥8/10 and
++0.008 with all ten players known** — small, but it stopped shrinking and stayed
+significant, so it is real. Elo *spread* specifically never became significant;
+the stomp hypothesis is not what carries it. Plain elo *mean* does, at
++0.0026 ± 0.0009, which says the match's 10-bucket average tier is simply a
+lossy version of what per-player LP measures precisely.
+
+Whether it is worth having: it roughly doubles what tier alone adds, but costs 10
+profile calls per match and, at inference, live enemy-team lookups the static
+page cannot perform. Worth it for offline analysis; not worth restructuring the
+page around.
 
 ### Time features: null
 
