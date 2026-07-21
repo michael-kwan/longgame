@@ -113,6 +113,17 @@ button.primary { background: var(--series-1); color: #fff; border-color: transpa
 .dot.ally { background: var(--ally); }
 .dot.enemy { background: var(--enemy); }
 .slot { display: flex; align-items: center; gap: 7px; margin-bottom: 5px; }
+.side h3 .hint { font-weight: 400; color: var(--muted); font-size: 10.5px; letter-spacing: 0; }
+.slot { cursor: grab; }
+.slot.dragging { opacity: 0.45; cursor: grabbing; }
+.slot .grip {
+  flex: none; width: 12px; color: var(--muted); font-size: 12px; line-height: 1;
+  text-align: center; user-select: none;
+}
+.slot .turn {
+  flex: none; width: 14px; font-size: 10px; color: var(--muted);
+  font-variant-numeric: tabular-nums; text-align: right;
+}
 .slot .role {
   font-size: 10px; color: var(--muted); width: 54px; flex: none;
   text-transform: uppercase; letter-spacing: 0.04em;

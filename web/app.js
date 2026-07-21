@@ -31,6 +31,11 @@ const pBelow = (probs, minutes) => {
    "will this run past 35 minutes". The tail question is the better-posed one,
    so it is selectable — and it reads off the same distribution head. */
 
+/* Minimum games a champion must have in a role to be recommended — the
+   data-support guard of DESIGN.md §6. Fixed rather than exposed: dropping it to
+   zero lets the model recommend champions it has never seen in that role. */
+const SUPPORT_FLOOR = 30;
+
 const OBJECTIVES = {
   mean:  { label: "E[duration]",   unit: "min",
            of: (probs) => { let s = 0; for (let i = 0; i < NB; i++) s += probs[i] * CENTERS[i]; return s; },
@@ -60,9 +65,8 @@ const S = {
   enemy: ROLES.map((_, i) => ({ role: i, champ: null })),
   tier: Math.max(0, TIERS.indexOf("EMERALD")),
   queue: Math.max(0, QUEUES.indexOf("FLEXRANKED")),
-  onclock: 0,
   lambda: 0.5,
-  support: 30,
+  support: SUPPORT_FLOOR,
   poolOnly: false,
   objective: "mean",
   log: [],   // ordered lock events, so the trajectory is real history
@@ -79,6 +83,7 @@ function stateFrom(bans, ally, enemy) {
 const currentState = () => stateFrom(S.bans, S.ally, S.enemy);
 
 function stateAfter(k) {
+  // Slots are keyed by role, not by position, because the rows are draggable.
   const bans = [], ally = ROLES.map((_, i) => ({ role: i, champ: null })),
         enemy = ROLES.map((_, i) => ({ role: i, champ: null }));
   for (const e of S.log.slice(0, k)) {
@@ -87,6 +92,12 @@ function stateAfter(k) {
     else enemy[e.slot].champ = e.champ;
   }
   return stateFrom(bans, ally, enemy);
+}
+
+/** The next pick is the topmost unfilled row — that is what the ordering means. */
+function onClockRole() {
+  const open = S.ally.find((s) => !s.champ);
+  return open ? open.role : null;
 }
 
 const taken = () => new Set([
@@ -123,7 +134,8 @@ const poolFor = (role) => {
 /* ---------- recommendations ---------- */
 
 function recommend() {
-  const role = S.onclock;
+  const role = onClockRole();
+  if (role === null) return { base: predict(currentState()), list: [], role };
   const used = taken();
   const pool = S.poolOnly ? poolFor(role) : null;
   const base = predict(currentState());
@@ -152,7 +164,7 @@ function recommend() {
     });
   }
   out.sort((a, b) => b.score - a.score);
-  return { base, list: out };
+  return { base, list: out, role };
 }
 
 /* ---------- charts ---------- */
@@ -301,11 +313,16 @@ const fmtDelta = (d) =>
 
 /* ---------- render ---------- */
 
-function renderRecs(base, list) {
+function renderRecs(base, list, role) {
   const box = document.getElementById("recs");
+  if (role === null) {
+    box.innerHTML = `<p class="note">All five of your picks are locked. Clear one to see
+      recommendations for it.</p>`;
+    return;
+  }
   if (!list.length) {
-    box.innerHTML = `<p class="note">No legal candidates. Lower “min games in role”, turn off the
-      roster pool, or pick a role that still has an open slot.</p>`;
+    box.innerHTML = `<p class="note">No legal candidates for
+      <b>${ROLES[role]}</b>. Turn off the roster pool, or free up that row.</p>`;
     return;
   }
   const obj = OBJECTIVES[S.objective];
@@ -333,14 +350,15 @@ function renderRecs(base, list) {
       <th class="num">Δ</th><th class="num">spread</th><th class="num">score</th>
       <th class="num">games</th></tr></thead>
     <tbody>${rows}</tbody></table>
-    <p class="note">Ranked by <b>${obj.label} − ${S.lambda.toFixed(1)}×spread</b>. “Spread” is
+    <p class="note">For <b>${ROLES[role]}</b> — the topmost unfilled row on your team.
+    Ranked by <b>${obj.label} − ${S.lambda.toFixed(1)}×spread</b>. “Spread” is
     ensemble disagreement: high spread means the model is extrapolating, so pessimism pushes it down.
     “Games” is how often that champion was played in this role in the training data.</p>`;
 }
 
 function refresh() {
-  const { base, list } = recommend();
-  renderRecs(base, list);
+  const { base, list, role } = recommend();
+  renderRecs(base, list, role);
 
   const prev = S.log.length ? predict(stateAfter(S.log.length - 1)).probs : null;
   drawDistribution(base.probs, prev);
@@ -375,12 +393,74 @@ function refresh() {
       : "Each locked champion updates the estimate.";
 
   document.querySelectorAll(".slot").forEach((n) => n.classList.remove("oncall"));
-  const open = S.ally.findIndex((s) => s.role === S.onclock && !s.champ);
-  if (open >= 0) document.querySelector(`.slot[data-side="ally"][data-slot="${open}"]`)?.classList.add("oncall");
+  const nextRole = onClockRole();
+  if (nextRole !== null) {
+    document.querySelector(`.slot[data-side="ally"][data-role="${nextRole}"]`)
+      ?.classList.add("oncall");
+  }
+  renumber();
 
   document.getElementById("boardNote").textContent =
     `${S.bans.filter(Boolean).length} bans · ${S.ally.filter((s) => s.champ).length}/5 ally · ` +
     `${S.enemy.filter((s) => s.champ).length}/5 enemy locked. Enemy roles are left unknown to the model, as they are in a real draft.`;
+}
+
+/* ---------- drag to reorder ---------- */
+
+/** Number the rows 1..5 so the pick order is legible at a glance. */
+function renumber() {
+  for (const side of ["ally", "enemy"]) {
+    const box = document.getElementById(side === "ally" ? "allySlots" : "enemySlots");
+    if (!box) continue;
+    [...box.querySelectorAll(".slot")].forEach((row, i) => {
+      const t = row.querySelector(".turn");
+      if (t) t.textContent = String(i + 1);
+    });
+  }
+}
+
+/** Row order is the team's pick order; the model itself is order-invariant. */
+function makeSortable(box, side) {
+  let dragged = null;
+
+  const rowBelow = (y) => {
+    const rows = [...box.querySelectorAll(".slot:not(.dragging)")];
+    return rows.find((r) => {
+      const b = r.getBoundingClientRect();
+      return y < b.top + b.height / 2;
+    }) || null;
+  };
+
+  box.addEventListener("dragstart", (e) => {
+    const row = e.target.closest(".slot");
+    if (!row) return;
+    dragged = row;
+    row.classList.add("dragging");
+    e.dataTransfer.effectAllowed = "move";
+    // Firefox refuses to start a drag without payload.
+    e.dataTransfer.setData("text/plain", row.dataset.role);
+  });
+
+  box.addEventListener("dragover", (e) => {
+    if (!dragged) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    const ref = rowBelow(e.clientY);
+    if (ref === dragged) return;
+    if (ref === null) box.appendChild(dragged);
+    else box.insertBefore(dragged, ref);
+  });
+
+  box.addEventListener("drop", (e) => e.preventDefault());
+
+  box.addEventListener("dragend", () => {
+    if (!dragged) return;
+    dragged.classList.remove("dragging");
+    dragged = null;
+    const order = [...box.querySelectorAll(".slot")].map((r) => +r.dataset.role);
+    S[side] = order.map((role) => S[side].find((sl) => sl.role === role));
+    refresh();
+  });
 }
 
 /* ---------- inputs ---------- */
@@ -423,18 +503,33 @@ function build() {
 
   for (const side of ["ally", "enemy"]) {
     const box = document.getElementById(side === "ally" ? "allySlots" : "enemySlots");
-    S[side].forEach((slot, i) => {
+    S[side].forEach((slot) => {
       const row = document.createElement("div");
       row.className = "slot";
+      row.draggable = true;
       row.dataset.side = side;
-      row.dataset.slot = i;
+      row.dataset.role = slot.role;
+
+      const turn = document.createElement("span");
+      turn.className = "turn";
+      row.appendChild(turn);
+
+      const grip = document.createElement("span");
+      grip.className = "grip";
+      grip.textContent = "⠿";
+      grip.setAttribute("aria-hidden", "true");
+      row.appendChild(grip);
+
       const lab = document.createElement("span");
       lab.className = "role";
       lab.textContent = ROLES[slot.role];
       row.appendChild(lab);
-      row.appendChild(champInput((idx) => { slot.champ = idx; logSet(side, i, idx); }, "—"));
+
+      row.appendChild(champInput(
+        (idx) => { slot.champ = idx; logSet(side, slot.role, idx); }, "—"));
       box.appendChild(row);
     });
+    makeSortable(box, side);
   }
 
   const tierSel = document.getElementById("tier");
@@ -463,27 +558,11 @@ function build() {
   });
   objSel.addEventListener("change", () => { S.objective = objSel.value; refresh(); });
 
-  const clock = document.getElementById("onclock");
-  ROLES.forEach((r, i) => {
-    const o = document.createElement("option");
-    o.value = i;
-    o.textContent = r[0] + r.slice(1).toLowerCase() + (rosterByRole[i] ? ` — ${rosterByRole[i].riot_id}` : "");
-    clock.appendChild(o);
-  });
-  clock.addEventListener("change", () => { S.onclock = +clock.value; refresh(); });
-
   const lam = document.getElementById("lambda");
   const lamVal = document.getElementById("lambdaVal");
   lamVal.textContent = S.lambda.toFixed(1);
   lam.addEventListener("input", () => {
     S.lambda = +lam.value; lamVal.textContent = S.lambda.toFixed(1); refresh();
-  });
-
-  const sup = document.getElementById("support");
-  const supVal = document.getElementById("supportVal");
-  supVal.textContent = S.support;
-  sup.addEventListener("input", () => {
-    S.support = +sup.value; supVal.textContent = S.support; refresh();
   });
 
   const poolBtn = document.getElementById("poolonly");
