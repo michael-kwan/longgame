@@ -25,6 +25,33 @@ const pBelow = (probs, minutes) => {
   return s;
 };
 
+/* ---------- objectives ----------
+   Measured on this dataset: champion identity + tier + queue + player history
+   explain R^2 ~= 0.021 of duration in minutes, but give AUC 0.60 for
+   "will this run past 35 minutes". The tail question is the better-posed one,
+   so it is selectable — and it reads off the same distribution head. */
+
+const OBJECTIVES = {
+  mean:  { label: "E[duration]",   unit: "min",
+           of: (probs) => { let s = 0; for (let i = 0; i < NB; i++) s += probs[i] * CENTERS[i]; return s; },
+           fmt: (v) => v.toFixed(2), fmtDelta: (d) => (d >= 0 ? "+" : "") + d.toFixed(2) + " min" },
+  p35:   { label: "P(> 35 min)",   unit: "%",
+           of: (probs) => pAbove(probs, 35),
+           fmt: (v) => (v * 100).toFixed(1), fmtDelta: (d) => (d >= 0 ? "+" : "") + (d * 100).toFixed(2) + " pp" },
+  p40:   { label: "P(> 40 min)",   unit: "%",
+           of: (probs) => pAbove(probs, 40),
+           fmt: (v) => (v * 100).toFixed(1), fmtDelta: (d) => (d >= 0 ? "+" : "") + (d * 100).toFixed(2) + " pp" },
+};
+
+/** Objective value plus ensemble disagreement, both in the objective's own units. */
+function score(pred) {
+  const obj = OBJECTIVES[S.objective];
+  const vals = pred.memberProbs.map(obj.of);
+  const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
+  const varr = vals.reduce((a, b) => a + (b - mean) ** 2, 0) / vals.length;
+  return { value: mean, spread: Math.sqrt(varr) };
+}
+
 /* ---------- draft state ---------- */
 
 const S = {
@@ -37,6 +64,7 @@ const S = {
   lambda: 0.5,
   support: 30,
   poolOnly: false,
+  objective: "mean",
   log: [],   // ordered lock events, so the trajectory is real history
 };
 
@@ -99,6 +127,7 @@ function recommend() {
   const used = taken();
   const pool = S.poolOnly ? poolFor(role) : null;
   const base = predict(currentState());
+  const baseScore = score(base);
   const out = [];
 
   for (let ci = 1; ci <= CHAMPS.length; ci++) {
@@ -110,13 +139,15 @@ function recommend() {
     if (slot < 0) continue;
     ally[slot].champ = ci;
     const p = predict(stateFrom(S.bans, ally, S.enemy));
+    const s = score(p);
     out.push({
       ci,
       name: CHAMPS[ci - 1],
       mean: p.mean,
-      std: p.std,
-      score: p.mean - S.lambda * p.std,     // pessimism (DESIGN.md §6)
-      delta: p.mean - base.mean,
+      value: s.value,
+      std: s.spread,
+      score: s.value - S.lambda * s.spread,   // pessimism (DESIGN.md §6)
+      delta: s.value - baseScore.value,
       games: PLAY[ci][role],
     });
   }
@@ -277,7 +308,8 @@ function renderRecs(base, list) {
       roster pool, or pick a role that still has an open slot.</p>`;
     return;
   }
-  const maxAbs = Math.max(...list.slice(0, 12).map((r) => Math.abs(r.delta)), 0.05);
+  const obj = OBJECTIVES[S.objective];
+  const maxAbs = Math.max(...list.slice(0, 12).map((r) => Math.abs(r.delta)), 1e-4);
   const rows = list.slice(0, 12).map((r, i) => {
     const w = (Math.abs(r.delta) / maxAbs) * 50;
     const pos = r.delta >= 0;
@@ -287,21 +319,21 @@ function renderRecs(base, list) {
     return `<tr>
       <td class="rank">${i + 1}</td>
       <td>${r.name}</td>
-      <td class="num">${r.mean.toFixed(2)}</td>
+      <td class="num">${obj.fmt(r.value)}</td>
       <td class="delta-cell"><div class="delta-bar"><div class="axis"></div>
         <div class="fill" style="${fill}"></div></div></td>
-      <td class="num ${pos ? "up" : "down"}">${fmtDelta(r.delta)}</td>
-      <td class="num spread">±${r.std.toFixed(2)}</td>
-      <td class="num">${r.score.toFixed(2)}</td>
+      <td class="num ${pos ? "up" : "down"}">${obj.fmtDelta(r.delta)}</td>
+      <td class="num spread">±${obj.fmt(r.std)}</td>
+      <td class="num">${obj.fmt(r.score)}</td>
       <td class="num spread">${r.games}</td>
     </tr>`;
   }).join("");
   box.innerHTML = `<table>
-    <thead><tr><th></th><th>Champion</th><th class="num">E[dur]</th><th></th>
+    <thead><tr><th></th><th>Champion</th><th class="num">${obj.label}</th><th></th>
       <th class="num">Δ</th><th class="num">spread</th><th class="num">score</th>
       <th class="num">games</th></tr></thead>
     <tbody>${rows}</tbody></table>
-    <p class="note">Ranked by <b>E[duration] − ${S.lambda.toFixed(1)}×spread</b>. “Spread” is
+    <p class="note">Ranked by <b>${obj.label} − ${S.lambda.toFixed(1)}×spread</b>. “Spread” is
     ensemble disagreement: high spread means the model is extrapolating, so pessimism pushes it down.
     “Games” is how often that champion was played in this role in the training data.</p>`;
 }
@@ -422,6 +454,14 @@ function build() {
     qSel.appendChild(o);
   });
   qSel.addEventListener("change", () => { S.queue = +qSel.value; refresh(); });
+
+  const objSel = document.getElementById("objective");
+  Object.entries(OBJECTIVES).forEach(([k, o]) => {
+    const opt = document.createElement("option");
+    opt.value = k; opt.textContent = o.label;
+    objSel.appendChild(opt);
+  });
+  objSel.addEventListener("change", () => { S.objective = objSel.value; refresh(); });
 
   const clock = document.getElementById("onclock");
   ROLES.forEach((r, i) => {

@@ -379,6 +379,44 @@ Per-fold R² ranges over [+0.008, +0.029], which is why single-split numbers swi
 wildly; two runs on near-identical data gave +0.009 and +0.017. Any single-split
 figure below carries ~±0.01 of noise.
 
+### The ceiling, measured
+
+`model/ceiling.py` — 10-fold CV, every feature available at draft time:
+
+| feature block | R² |
+|---|---|
+| champion identity | +0.0165 ± 0.0025 |
+| elo tier | +0.0046 ± 0.0011 |
+| queue (solo/flex) | ~0 |
+| player history (leave-one-out mean duration) | ~0 |
+| **everything combined** | **+0.0213 ± 0.0025** |
+
+**~2% of duration variance is predictable at draft time.** In usable units: of
+6.50 min of duration spread, about **0.95 min is predictable**. That is not a
+modelling failure — it is how much information the draft carries about a game
+that has not been played yet. More data sharpens the estimate; it does not raise
+this ceiling.
+
+Player identity disappointing at ~0 deserves a caveat: players average only 3.9
+appearances in this dataset, so their per-player means are mostly noise and the
+effect is heavily attenuated. Crawling *deeper* (more games per player) rather
+than wider would give this a fair test.
+
+### The tail is the better-posed question
+
+Duration in minutes is hard to predict; "will this run long" is less hard:
+
+| target | metric |
+|---|---|
+| duration in minutes | R² +0.021 |
+| P(duration > 35 min), base rate 13.7% | **AUC 0.598** |
+| P(duration > 40 min), base rate 3.9% | AUC 0.591 |
+
+AUC 0.60 is modest but genuinely usable for ranking candidates, and it reads off
+the same distributional head at no cost. The page therefore exposes an
+**objective selector** — `E[duration]`, `P(> 35 min)`, `P(> 40 min)` — with
+pessimism computed in whichever units are selected.
+
 ### Lane matchups: not detectable
 
 Permutation test (`model/matchups.py`) — strip additive per-(role, champion)

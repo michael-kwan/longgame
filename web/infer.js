@@ -111,11 +111,12 @@ function createEnsemble(bundle) {
   /* Ensemble mean plus member disagreement — the pessimism signal of DESIGN.md §6. */
   function predict(st) {
     const probs = new Float32Array(NB);
-    const means = [];
+    const means = [], memberProbs = [];
     let win = 0;
     for (const net of nets) {
       const { logits, win: wl } = forward(net, st);
       const p = softmax(logits);
+      memberProbs.push(p);
       let m = 0;
       for (let i = 0; i < NB; i++) { probs[i] += p[i] / nets.length; m += p[i] * CENTERS[i]; }
       means.push(m);
@@ -123,7 +124,7 @@ function createEnsemble(bundle) {
     }
     const mean = means.reduce((a, b) => a + b, 0) / means.length;
     const varr = means.reduce((a, b) => a + (b - mean) ** 2, 0) / means.length;
-    return { probs, mean, std: Math.sqrt(varr), win, means };
+    return { probs, mean, std: Math.sqrt(varr), win, means, memberProbs };
   }
 
   return { nets, forward, predict, DIM, NB, CENTERS };
