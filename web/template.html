@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>longgame — draft for duration</title>
+<style>/*STYLE*/</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>longgame</h1>
+    <div class="chips" id="chips"></div>
+  </header>
+  <p class="sub">Champion select recommendations that maximise <b>game duration</b>, not win rate.
+    Runs entirely in this page — no network calls.</p>
+
+  <div class="card">
+    <h2>Setup</h2>
+    <div class="controls">
+      <div class="field"><label for="tier">Elo band</label><select id="tier"></select></div>
+      <div class="field"><label for="queue">Queue</label><select id="queue"></select></div>
+      <div class="field"><label for="onclock">Picking for</label><select id="onclock"></select></div>
+      <div class="field"><label for="lambda">Pessimism (&lambda;) <span id="lambdaVal"></span></label>
+        <input type="range" id="lambda" min="0" max="2" step="0.1" value="0.5"></div>
+      <div class="field"><label for="support">Min games in role <span id="supportVal"></span></label>
+        <input type="range" id="support" min="0" max="200" step="10" value="30"></div>
+      <div class="field"><label for="poolonly">&nbsp;</label>
+        <button id="poolonly" type="button">Roster pool: off</button></div>
+      <div class="field"><label>&nbsp;</label><button id="reset" type="button">Reset draft</button></div>
+    </div>
+    <div id="rosterBox"></div>
+  </div>
+
+  <div class="card">
+    <h2>Bans</h2>
+    <div class="bans" id="bans"></div>
+  </div>
+
+  <div class="card">
+    <h2>Draft board</h2>
+    <div class="sides">
+      <div class="side">
+        <h3><span class="dot ally"></span>My team</h3>
+        <div id="allySlots"></div>
+      </div>
+      <div class="side">
+        <h3><span class="dot enemy"></span>Enemy</h3>
+        <div id="enemySlots"></div>
+      </div>
+    </div>
+    <p class="note" id="boardNote"></p>
+  </div>
+
+  <div class="grid-main">
+    <div class="card">
+      <h2>Best next pick</h2>
+      <div id="recs"></div>
+    </div>
+
+    <div>
+      <div class="card">
+        <h2>Predicted duration</h2>
+        <div class="hero">
+          <div class="stat"><span class="lbl">Expected</span>
+            <span class="big" id="heroMean">–<span class="unit"> min</span></span></div>
+          <div class="stat"><span class="lbl">P(&gt; 35 min)</span>
+            <span class="big" id="heroLong">–<span class="unit">%</span></span></div>
+          <div class="stat"><span class="lbl">P(&lt; 20 min)</span>
+            <span class="big" id="heroShort">–<span class="unit">%</span></span></div>
+        </div>
+        <div class="legend">
+          <span><i class="swatch" style="background:var(--series-1)"></i>current board</span>
+          <span><i class="swatch prev"></i>previous step</span>
+        </div>
+        <svg id="dist" viewBox="0 0 520 190" role="img" aria-label="Predicted game duration distribution"></svg>
+        <details>
+          <summary>Table view</summary>
+          <div id="distTable"></div>
+        </details>
+      </div>
+
+      <div class="card">
+        <h2>How it moved through the draft</h2>
+        <svg id="traj" viewBox="0 0 520 150" role="img" aria-label="Expected duration across draft steps"></svg>
+        <p class="note" id="trajNote">Each locked champion updates the estimate.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>What this is</h2>
+    <p class="note" id="about"></p>
+  </div>
+</div>
+
+<div class="tooltip" id="tip"></div>
+<script type="application/json" id="bundle">/*BUNDLE*/</script>
+<script>/*APP*/</script>
+</body>
+</html>
