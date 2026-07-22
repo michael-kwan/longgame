@@ -76,6 +76,9 @@ def main() -> None:
     if not members:
         raise SystemExit("no member checkpoints found — run `python -m model.train` first")
 
+    win_path = args.artifacts / "win_model.json"
+    win_model = json.loads(win_path.read_text()) if win_path.exists() else None
+
     roster_path = args.roster or (args.artifacts / "roster.json")
     roster = json.loads(roster_path.read_text()) if roster_path.exists() else None
 
@@ -93,6 +96,7 @@ def main() -> None:
             "trained_at": meta["trained_at"],
         },
         "roster": roster,
+        "win_model": win_model,
     }
 
     template = (args.web / "template.html").read_text()

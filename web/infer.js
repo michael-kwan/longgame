@@ -40,6 +40,28 @@ function softmax(z) {
   return p;
 }
 
+/* Win probability is NOT the network's win_head — that head scores 0.4926
+   held-out accuracy, worse than chance, because the duration model is symmetric
+   in the two teams and cannot represent "which side". This is a separate
+   antisymmetric ridge (ally champions minus enemy champions), AUC ~0.529.
+   Bootstrap members give it the same ensemble-spread semantics as the rest. */
+function createWinModel(winModel) {
+  if (!winModel || !winModel.members || !winModel.members.length) return null;
+  const members = winModel.members.map((m) => ({ w: Float64Array.from(m.w), mu: m.mu }));
+  return {
+    cv: winModel.cv,
+    /** P(ally side wins) per bootstrap member. */
+    perMember(st) {
+      return members.map(({ w, mu }) => {
+        let s = mu;
+        for (const c of st.allyC) s += w[c];
+        for (const c of st.enemyC) s -= w[c];
+        return Math.min(0.99, Math.max(0.01, s));
+      });
+    },
+  };
+}
+
 function createEnsemble(bundle) {
   const DIM = bundle.config.dim;
   const NB = bundle.config.n_bins;
@@ -127,7 +149,7 @@ function createEnsemble(bundle) {
     return { probs, mean, std: Math.sqrt(varr), win, means, memberProbs };
   }
 
-  return { nets, forward, predict, DIM, NB, CENTERS };
+  return { nets, forward, predict, DIM, NB, CENTERS, winModel: createWinModel(bundle.win_model) };
 }
 
 globalThis.LG = { decode, gelu, linear, softmax, createEnsemble };

@@ -46,12 +46,14 @@ const OBJECTIVES = {
   p40:   { label: "P(> 40 min)",   unit: "%",
            of: (probs) => pAbove(probs, 40),
            fmt: (v) => (v * 100).toFixed(1), fmtDelta: (d) => (d >= 0 ? "+" : "") + (d * 100).toFixed(2) + " pp" },
+  win:   { label: "Win rate",      unit: "%", win: true,
+           fmt: (v) => (v * 100).toFixed(1), fmtDelta: (d) => (d >= 0 ? "+" : "") + (d * 100).toFixed(2) + " pp" },
 };
 
 /** Objective value plus ensemble disagreement, both in the objective's own units. */
-function score(pred) {
+function score(pred, st) {
   const obj = OBJECTIVES[S.objective];
-  const vals = pred.memberProbs.map(obj.of);
+  const vals = obj.win ? ENS.winModel.perMember(st) : pred.memberProbs.map(obj.of);
   const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
   const varr = vals.reduce((a, b) => a + (b - mean) ** 2, 0) / vals.length;
   return { value: mean, spread: Math.sqrt(varr) };
@@ -147,7 +149,7 @@ function recommend(roleArg) {
   const used = taken();
   const pool = S.poolOnly ? poolFor(role) : null;
   const base = predict(currentState());
-  const baseScore = score(base);
+  const baseScore = score(base, currentState());
   const out = [];
 
   for (let ci = 1; ci <= CHAMPS.length; ci++) {
@@ -158,8 +160,9 @@ function recommend(roleArg) {
     const slot = ally.findIndex((s) => s.role === role && !s.champ);
     if (slot < 0) continue;
     ally[slot].champ = ci;
-    const p = predict(stateFrom(S.bans, ally, S.enemy));
-    const s = score(p);
+    const cand = stateFrom(S.bans, ally, S.enemy);
+    const p = predict(cand);
+    const s = score(p, cand);
     out.push({
       ci,
       name: CHAMPS[ci - 1],
@@ -604,6 +607,7 @@ function build() {
 
   const objSel = document.getElementById("objective");
   Object.entries(OBJECTIVES).forEach(([k, o]) => {
+    if (o.win && !ENS.winModel) return;
     const opt = document.createElement("option");
     opt.value = k; opt.textContent = o.label;
     objSel.appendChild(opt);
