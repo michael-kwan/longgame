@@ -71,6 +71,8 @@ const S = {
   support: SUPPORT_FLOOR,
   poolOnly: false,
   showSuggestions: true,   // greyed top-1 per open role, on by default
+  viewRole: null,          // which open role the table shows; null follows the next pick
+  sortDesc: true,          // false ranks worst-first
   objective: "mean",
   log: [],   // ordered lock events, so the trajectory is real history
 };
@@ -141,6 +143,13 @@ function openRoles() {
   return S.ally.filter((s) => !s.champ).map((s) => s.role);
 }
 
+/** The role the table shows: an explicit pick, else the next one up. */
+function viewedRole() {
+  const open = openRoles();
+  if (S.viewRole !== null && open.includes(S.viewRole)) return S.viewRole;
+  return open.length ? open[0] : null;
+}
+
 function recommend(roleArg) {
   const role = roleArg === undefined ? onClockRole() : roleArg;
   if (role === null || role === undefined) {
@@ -174,7 +183,7 @@ function recommend(roleArg) {
       games: PLAY[ci][role],
     });
   }
-  out.sort((a, b) => b.score - a.score);
+  out.sort((a, b) => (S.sortDesc ? b.score - a.score : a.score - b.score));
   return { base, list: out, role };
 }
 
@@ -357,13 +366,22 @@ function renderRecs(base, list, role) {
       <td class="num spread">${r.games}</td>
     </tr>`;
   }).join("");
-  box.innerHTML = `<table>
-    <thead><tr><th></th><th>Champion</th><th class="num">${obj.label}</th><th></th>
+  const open = openRoles();
+  const chips = open.length < 2 ? "" : `<div class="rolechips">` + open.map((r, i) =>
+    `<button type="button" class="rolechip${r === role ? " on" : ""}" data-role="${r}">
+       ${ROLES[r]}${i === 0 ? ' <span class="tag">next</span>' : ""}
+     </button>`).join("") + `</div>`;
+
+  box.innerHTML = chips + `<table>
+    <thead><tr><th></th><th>Champion</th>
+      <th class="num sortable" id="sortMetric" title="Click to flip between best and worst">
+        ${obj.label} <span class="arrow">${S.sortDesc ? "\u25BC" : "\u25B2"}</span></th><th></th>
       <th class="num">Δ</th><th class="num">spread</th><th class="num">score</th>
       <th class="num">games</th></tr></thead>
     <tbody>${rows}</tbody></table>
-    <p class="note">For <b>${ROLES[role]}</b> — the topmost unfilled row on your team.
-    Ranked by <b>${obj.label} − ${S.lambda.toFixed(1)}×spread</b>. “Spread” is
+    <p class="note">For <b>${ROLES[role]}</b>${open[0] === role ? " — your next pick" : ""}.
+    Showing the <b>${S.sortDesc ? "best" : "worst"}</b> by
+    <b>${obj.label} − ${S.lambda.toFixed(1)}×spread</b>. “Spread” is
     ensemble disagreement: high spread means the model is extrapolating, so pessimism pushes it down.
     “Games” is how often that champion was played in this role in the training data.</p>`;
 }
@@ -388,8 +406,14 @@ function updateSuggestions() {
     if (!input) continue;
     if (slot.champ) { input.placeholder = "—"; input.dataset.suggest = ""; continue; }
     if (!S.showSuggestions) { input.placeholder = "—"; input.dataset.suggest = ""; continue; }
+    // Always the best candidate, never the table's current sort direction —
+    // a suggestion is a recommendation, not a view setting.
     const { list } = recommend(slot.role);
-    const best = list.find((r) => !claimed.has(r.ci));
+    let best = null;
+    for (const r of list) {
+      if (claimed.has(r.ci)) continue;
+      if (best === null || r.score > best.score) best = r;
+    }
     if (!best) { input.placeholder = "—"; input.dataset.suggest = ""; continue; }
     claimed.add(best.ci);
     input.placeholder = best.name;
@@ -405,10 +429,25 @@ function acceptSuggestion(input) {
   return true;
 }
 
+function bindRecControls() {
+  document.querySelectorAll("#recs .rolechip").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      S.viewRole = +btn.dataset.role;
+      refresh();
+    });
+  });
+  document.getElementById("sortMetric")?.addEventListener("click", () => {
+    S.sortDesc = !S.sortDesc;
+    refresh();
+  });
+}
+
 function refresh() {
   const base = predict(currentState());
-  const { list, role } = recommend();
+  const role = viewedRole();
+  const { list } = recommend(role === null ? undefined : role);
   renderRecs(base, list, role);
+  bindRecControls();
 
   updateSuggestions();
 

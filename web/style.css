@@ -134,6 +134,16 @@ button.primary { background: var(--series-1); color: #fff; border-color: transpa
 .bans input { width: 104px; min-width: 0; }
 
 /* -- recommendations -- */
+.rolechips { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 9px; }
+.rolechip {
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.04em;
+  padding: 3px 8px; border-radius: 999px; color: var(--text-secondary);
+}
+.rolechip.on { background: var(--series-1); color: #fff; border-color: transparent; }
+.rolechip .tag { opacity: 0.7; text-transform: none; letter-spacing: 0; }
+th.sortable { cursor: pointer; user-select: none; }
+th.sortable:hover { color: var(--text-primary); }
+th .arrow { font-size: 8px; }
 table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
 th {
   text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em;
